@@ -6,7 +6,7 @@ if ((go env GOVERSION) -ne 'go1.27.2') { throw 'Go 1.27.2 required.' }
 New-Item -ItemType Directory -Force dist/windows | Out-Null
 $revision = & git rev-parse HEAD
 if ($LASTEXITCODE) { throw 'Git revision unavailable.' }
-$version = & git describe --tags --always --dirty
+$version = (& git describe --tags --always --dirty) -replace '^v', ''
 if ($LASTEXITCODE) { throw 'Git version unavailable.' }
 $ldflags = "-X github.com/filiprek/conflux-vpn/internal/version.Version=$version -X github.com/filiprek/conflux-vpn/internal/version.Commit=$revision -X main.version=$version -X main.commit=$revision"
 $env:GOOS='windows'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'

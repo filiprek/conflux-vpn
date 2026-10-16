@@ -1,33 +1,39 @@
 <#
 .SYNOPSIS
-  One-step Conflux setup for Windows 11 x64: toolchain, source, build and service install.
+  One-step Conflux setup for Windows 11 x64.
 
 .DESCRIPTION
   Run from an ordinary (non-elevated) PowerShell window as the user who will use Conflux:
 
     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-windows.ps1)))
 
-  The script
-    1. installs Git (winget), Go 1.27.2 and Node.js 24 for the current user when missing;
-       Go and Node archives are verified against pinned SHA-256 values;
-    2. clones or fast-forwards the repository into -Directory;
-    3. runs the frontend checks and builds the service, CLI and desktop GUI;
-    4. downloads sing-box 1.14.3 and Wintun 0.14.1 from their official sources, verifies
-       pinned SHA-256 values, and installs the Conflux service after one UAC prompt.
-       An existing installation is upgraded in place and keeps its data.
+  By default the script downloads the latest GitHub release and verifies it against the
+  release's SHA256SUMS. With -FromSource it instead installs Git, Go 1.27.2 and Node.js 24
+  for the current user (pinned SHA-256), clones the repository and builds everything.
 
-  Run it again at any time to update. -BuildOnly stops after step 3.
+  Either way it then downloads sing-box 1.14.3 and Wintun 0.14.1 from their official
+  sources, verifies pinned SHA-256 values and the Wintun signature, and installs the
+  Conflux service after one UAC prompt. An existing installation is upgraded in place
+  and keeps its data. Run it again at any time to update.
+
+.PARAMETER FromSource
+  Build from the repository instead of using the release package.
+
+.PARAMETER BuildOnly
+  Build from source without installing (implies -FromSource).
 
 .PARAMETER Directory
-  Where the source checkout lives. Default: %USERPROFILE%\conflux-vpn.
+  Release: where the package is unpacked (default %LOCALAPPDATA%\Conflux\release).
+  Source: the checkout (default %USERPROFILE%\conflux-vpn).
 
 .PARAMETER OwnerSID
   SID of the desktop user allowed to control the service. Default: the current user.
 #>
 [CmdletBinding()]
 param(
-  [string]$Directory = (Join-Path $HOME 'conflux-vpn'),
+  [string]$Directory,
   [string]$Branch = 'main',
+  [switch]$FromSource,
   [switch]$BuildOnly,
   [string]$OwnerSID,
   # Internal: the elevated second stage started by this script.
@@ -38,6 +44,8 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repository = 'https://github.com/filiprek/conflux-vpn.git'
+$LatestRelease = 'https://api.github.com/repos/filiprek/conflux-vpn/releases/latest'
+$PackageName = 'Conflux-windows-amd64.zip'
 $Pinned = @{
   Go      = @{ Version = 'go1.27.2'; Url = 'https://go.dev/dl/go1.27.2.windows-amd64.zip'; SHA256 = '1314008898bd40df77af4b014f777f08873dbdfbcd3d92308728ee03304fe04f' }
   Node    = @{ Version = 'v24.22.0'; Url = 'https://nodejs.org/dist/v24.22.0/node-v24.22.0-win-x64.zip'; SHA256 = 'f9683a19877e12a9b167305c8db71040d812876359de21f0d2e97c3f321f80c3' }
@@ -131,6 +139,46 @@ function Update-Source {
   }
 }
 
+# A source checkout and an unpacked release package keep their files in different places.
+function Get-Layout {
+  if (Test-Path (Join-Path $Directory '.git')) {
+    return @{ Dist = Join-Path $Directory 'dist\windows'; Deploy = Join-Path $Directory 'deploy\windows'; Setup = Join-Path $Directory 'scripts\setup-windows.ps1' }
+  }
+  return @{ Dist = $Directory; Deploy = $Directory; Setup = Join-Path $Directory 'setup-windows.ps1' }
+}
+
+# Returns $false when no release package exists yet, so the caller can build from source.
+function Install-Release {
+  Write-Step 'Looking up the latest Conflux release'
+  try { $release = Invoke-RestMethod -UseBasicParsing -Uri $LatestRelease -Headers @{ 'User-Agent' = 'conflux-setup' } }
+  catch { return $false }
+  $package = $release.assets | Where-Object { $_.name -eq $PackageName } | Select-Object -First 1
+  $sums = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
+  if (-not $package -or -not $sums) { return $false }
+
+  $download = Join-Path $env:TEMP 'conflux-setup'
+  New-Item -ItemType Directory -Force $download | Out-Null
+  $zip = Join-Path $download $PackageName
+  Write-Step "Downloading Conflux $($release.tag_name)"
+  Invoke-WebRequest -UseBasicParsing -Uri $package.browser_download_url -OutFile $zip
+  # Binary content types arrive as bytes in Windows PowerShell and as text elsewhere.
+  $sumsText = (Invoke-WebRequest -UseBasicParsing -Uri $sums.browser_download_url).Content
+  if ($sumsText -is [byte[]]) { $sumsText = [Text.Encoding]::UTF8.GetString($sumsText) }
+  $expected = $null
+  foreach ($line in $sumsText -split "`n") {
+    if ($line -match "^([0-9a-f]{64})\s+\*?$([regex]::Escape($PackageName))\s*$") { $expected = $Matches[1] }
+  }
+  if (-not $expected) { throw "SHA256SUMS does not list $PackageName." }
+  $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($actual -ne $expected -or ($package.digest -and $package.digest -ne "sha256:$actual")) {
+    Remove-Item $zip -Force
+    throw "SHA-256 mismatch for $PackageName; download rejected."
+  }
+  if (Test-Path $Directory) { Remove-Item $Directory -Recurse -Force }
+  Expand-Archive $zip -DestinationPath $Directory
+  return $true
+}
+
 function Get-Runtimes([string]$Destination) {
   $singArchive = Get-VerifiedArchive $Pinned.SingBox $Destination
   $wintunArchive = Get-VerifiedArchive $Pinned.Wintun $Destination
@@ -147,7 +195,8 @@ function Get-Runtimes([string]$Destination) {
 
 # Elevated stage: fresh install through deploy/windows/install.ps1, or in-place upgrade.
 function Install-Service([string]$Sid) {
-  $dist = Join-Path $Directory 'dist\windows'
+  $layout = Get-Layout
+  $dist = $layout.Dist
   $runtime = Get-Runtimes (Join-Path $Directory '.runtime')
   $singHash = (Get-FileHash $runtime.SingBox -Algorithm SHA256).Hash.ToLowerInvariant()
   $wintunHash = (Get-FileHash $runtime.Wintun -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -171,7 +220,7 @@ function Install-Service([string]$Sid) {
       Copy-Item -LiteralPath (Join-Path $dist $file) -Destination $install -Force
     }
     Copy-Item -Path (Join-Path $dist 'licenses\*') -Destination (Join-Path $install 'licenses') -Recurse -Force
-    Copy-Item -LiteralPath (Join-Path $Directory 'deploy\windows\uninstall.ps1') -Destination $install -Force
+    Copy-Item -LiteralPath (Join-Path $layout.Deploy 'uninstall.ps1') -Destination $install -Force
     Copy-Item -LiteralPath $runtime.SingBox -Destination (Join-Path $install 'sing-box.exe') -Force
     Copy-Item -LiteralPath $runtime.Wintun -Destination (Join-Path $install 'wintun.dll') -Force
     $config = @{ version = 1; singBoxPath = (Join-Path $install 'sing-box.exe'); singBoxSHA256 = $singHash; singBoxVersion = $Pinned.SingBox.Version }
@@ -179,7 +228,7 @@ function Install-Service([string]$Sid) {
     Start-Service Conflux
   } else {
     Write-Step 'Installing the Conflux service'
-    & (Join-Path $Directory 'deploy\windows\install.ps1') -OwnerSID $Sid -SourceDirectory $dist `
+    & (Join-Path $layout.Deploy 'install.ps1') -OwnerSID $Sid -SourceDirectory $dist `
       -SingBox $runtime.SingBox -SingBoxSHA256 $singHash -Wintun $runtime.Wintun -WintunSHA256 $wintunHash
   }
 
@@ -202,27 +251,39 @@ if ($ElevatedInstall) {
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'Conflux requires 64-bit Windows.' }
 if ([Environment]::OSVersion.Version.Build -lt 22000) { Write-Warning 'Conflux targets Windows 11; this Windows version is untested.' }
 if (-not $OwnerSID) { $OwnerSID = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+if ($BuildOnly) { $FromSource = $true }
 
-Install-Git
-Install-Go
-Install-Node
-Update-Source
+if (-not $FromSource) {
+  if (-not $Directory) { $Directory = Join-Path $env:LOCALAPPDATA 'Conflux\release' }
+  if (-not (Install-Release)) {
+    Write-Warning 'No release package is available yet; building from source instead.'
+    $FromSource = $true
+    $Directory = $null
+  }
+}
+if ($FromSource) {
+  if (-not $Directory) { $Directory = Join-Path $HOME 'conflux-vpn' }
+  Install-Git
+  Install-Go
+  Install-Node
+  Update-Source
 
-Write-Step 'Building (frontend checks, service, CLI and desktop GUI)'
-$dev = Join-Path $Directory 'scripts\dev.ps1'
-& $dev frontend
-& $dev build
+  Write-Step 'Building (frontend checks, service, CLI and desktop GUI)'
+  $dev = Join-Path $Directory 'scripts\dev.ps1'
+  & $dev frontend
+  & $dev build
 
-if ($BuildOnly) {
-  Write-Host "Build complete: $(Join-Path $Directory 'dist\windows')" -ForegroundColor Green
-  return
+  if ($BuildOnly) {
+    Write-Host "Build complete: $(Join-Path $Directory 'dist\windows')" -ForegroundColor Green
+    return
+  }
 }
 
 if (Test-Administrator) {
   Install-Service $OwnerSID
 } else {
   Write-Step 'Installing the service (approve the administrator prompt)'
-  $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $Directory 'scripts\setup-windows.ps1')`"",
+  $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$((Get-Layout).Setup)`"",
     '-ElevatedInstall', '-Directory', "`"$Directory`"", '-OwnerSID', $OwnerSID)
   $process = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
   Get-Content (Join-Path $Directory '.runtime\install.log') -ErrorAction SilentlyContinue |

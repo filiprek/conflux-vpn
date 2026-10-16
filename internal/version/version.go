@@ -5,7 +5,7 @@ import (
 	"runtime"
 )
 
-var Version = "0.1.0-dev"
+var Version = "dev"
 var Commit = "unknown"
 
 func String() string {

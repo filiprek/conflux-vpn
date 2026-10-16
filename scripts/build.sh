@@ -3,7 +3,8 @@ set -euo pipefail
 cd -- "$(dirname -- "$0")/.."
 go_cmd=${GO:-go}
 [[ $($go_cmd env GOVERSION) == go1.27.2 ]] || { echo 'Go 1.27.2 required; set GO to the pinned executable.' >&2; exit 1; }
-version=$(git describe --tags --always --dirty 2>/dev/null || printf '0.1.0-dev')
+version=$(git describe --tags --always --dirty 2>/dev/null || printf 'dev')
+version=${version#v}
 commit=$(git rev-parse HEAD 2>/dev/null || printf 'unknown')
 ldflags="-X github.com/filiprek/conflux-vpn/internal/version.Version=$version -X github.com/filiprek/conflux-vpn/internal/version.Commit=$commit -X main.version=$version -X main.commit=$commit"
 mkdir -p dist/linux dist/windows

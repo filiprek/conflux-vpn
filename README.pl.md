@@ -4,7 +4,7 @@
 
 Conflux to klient VPN IPv4 dla Windows 11 x64 i przekaźnik dla Ubuntu 24.04. Korzysta z własnych węzłów VLESS obsługujących UDP: wiele zwykłych połączeń QUIC przenosi jeden logiczny tunel do wspólnego przekaźnika. Serwisy internetowe widzą publiczny adres IP przekaźnika. Interfejs Wails ma język polski i angielski oraz motyw jasny, ciemny i systemowy; uprzywilejowana usługa zarządza siecią.
 
-**To kod przed pierwszym wydaniem. Nie deklarujemy opublikowanych plików binarnych ani podpisanego instalatora. Pełny MVP nie przeszedł odbioru na rzeczywistych Windows/Ubuntu: instalacji, wycieków, awarii/restartu, agregacji przez dwa proxy i długich testów.** Używaj maszyny testowej z dostępem do konsoli. Przeczytaj [ograniczenia](docs/LIMITATIONS.md) i [macierz odbioru](docs/ACCEPTANCE.md).
+**Wersja 1.0.0 to pierwsze publiczne wydanie** ([pobierz](https://github.com/filiprek/conflux-vpn/releases/latest)). Przechodzi automatyczne testy i buildy CI na Windows i Linuksie; pełny odbiór na prawdziwych wdrożeniach (wycieki, awarie/restart, agregacja przez dwa proxy, długie testy) jest w toku. Najpierw wypróbuj na maszynie testowej. Przeczytaj [ograniczenia](docs/LIMITATIONS.md) i [macierz odbioru](docs/ACCEPTANCE.md).
 
 ```text
 Aplikacje Windows → Wintun / usługa → osobny proces sing-box
@@ -29,7 +29,18 @@ Potrzebujesz dwóch rzeczy: serwera relay (VPS z Ubuntu 24.04) i klienta na Wind
 curl -fsSL https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-relay.sh | sudo bash
 ```
 
-Skrypt buduje relay ze zweryfikowanym sumą kontrolną Go, instaluje usługę systemd i **jednorazowo** wypisuje tajną linię `conflux://...`. Zapisz ją w bezpiecznym miejscu. Dopisz `-s -- --public-host relay.example.org`, aby użyć nazwy DNS zamiast automatycznie wykrytego publicznego IPv4. Otwórz przychodzący UDP 4433 w firewallu dostawcy chmury.
+Skrypt instaluje zweryfikowany sumą kontrolną pakiet z wydania jako usługę systemd i wypisuje tajną linię `conflux://...`. Trzymaj ją w tajemnicy; ponownie wyświetlisz ją poleceniem `sudo conflux-relay --config /etc/conflux/relay.json --enrollment`. Dopisz `-s -- --public-host relay.example.org`, aby użyć nazwy DNS zamiast automatycznie wykrytego publicznego IPv4. Otwórz przychodzący UDP 4433 w firewallu dostawcy chmury.
+
+Wolisz Dockera? Obraz relay jest w GitHub Packages:
+
+```sh
+docker run -d --name conflux-relay --restart unless-stopped \
+  --cap-add NET_ADMIN --device /dev/net/tun --sysctl net.ipv4.ip_forward=1 \
+  -p 4433:4433/udp -v conflux-relay:/etc/conflux \
+  -e CONFLUX_PUBLIC_HOST=<publiczny IPv4 lub nazwa DNS> \
+  ghcr.io/filiprek/conflux-relay:1
+docker exec conflux-relay conflux-relay --config /etc/conflux/relay.json --enrollment
+```
 
 **2. Klient Windows** — w zwykłym (nie administratorskim) oknie PowerShell, jako użytkownik, który będzie korzystał z VPN:
 
@@ -37,11 +48,11 @@ Skrypt buduje relay ze zweryfikowanym sumą kontrolną Go, instaluje usługę sy
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-windows.ps1)))
 ```
 
-Skrypt w razie potrzeby instaluje Git, Go 1.27.2 i Node.js 24 dla Twojego konta, klonuje kod do `%USERPROFILE%\conflux-vpn`, buduje całość, pobiera sing-box 1.14.3 i Wintun 0.14.1 z oficjalnych stron (przypięte SHA-256, weryfikacja podpisu Wintun), instaluje usługę po jednym potwierdzeniu administratora i otwiera Conflux.
+Skrypt pobiera najnowsze wydanie i sprawdza je z `SHA256SUMS`, pobiera sing-box 1.14.3 i Wintun 0.14.1 z oficjalnych stron (przypięte SHA-256, weryfikacja podpisu Wintun), instaluje usługę po jednym potwierdzeniu administratora i otwiera Conflux. Narzędzia programistyczne nie są potrzebne. Aby zbudować ze źródeł, dodaj `-FromSource`.
 
 **3. Połączenie** — w Conflux: *Serwer relay* → wklej linię enrollment i potwierdź odcisk; *Ścieżki* → dodaj co najmniej dwa linki `vless://` i **Testuj** każdy; *Przegląd* → **Połącz**.
 
-Ponowne uruchomienie komendy aktualizuje instalację. Parametr `-BuildOnly` w skrypcie Windows tylko buduje, bez instalacji.
+Ponowne uruchomienie komendy aktualizuje instalację. Pliki wydania są też na [stronie wydań](https://github.com/filiprek/conflux-vpn/releases).
 
 ## Ręczna kompilacja ze źródeł
 
@@ -95,7 +106,7 @@ Podstaw rzeczywistą nazwę DNS lub publiczny IPv4. Skrypt generuje certyfikat i
 
 ## Instalacja i użycie Windows
 
-Pobierz osobny oficjalny sing-box **1.14.3**, niezależnie uwierzytelnij sumę kontrolną archiwum i zachowaj licencję GPL oraz informacje o odpowiadającym kodzie źródłowym. Pobierz oficjalny Wintun amd64 z https://www.wintun.net/. Sprawdź warunki dystrybucji, wiarygodną sumę i prawidłowy podpis Authenticode WireGuard. Projekt nie dołącza ani nie pobiera automatycznie tych plików. W tym środowisku nie zweryfikowano licencji/hashu gotowego Wintun; to przeszkoda do wydania. [Licencje zależności](THIRD_PARTY_NOTICES.md).
+Pobierz osobny oficjalny sing-box **1.14.3**, niezależnie uwierzytelnij sumę kontrolną archiwum i zachowaj licencję GPL oraz informacje o odpowiadającym kodzie źródłowym. Pobierz oficjalny Wintun amd64 z https://www.wintun.net/. Sprawdź warunki dystrybucji, wiarygodną sumę i prawidłowy podpis Authenticode WireGuard. Projekt nie dołącza ani nie pobiera automatycznie tych plików. Skrypt instalacyjny pobiera je z oficjalnych źródeł i weryfikuje sumy SHA-256 oraz podpis Wintun. [Licencje zależności](THIRD_PARTY_NOTICES.md).
 
 Przed podniesieniem uprawnień odczytaj SID docelowego użytkownika pulpitu: `[Security.Principal.WindowsIdentity]::GetCurrent().User.Value`. Następnie w PowerShell administratora użyj tego SID, rzeczywistych ścieżek i oczekiwanych sum SHA-256:
 

@@ -1,6 +1,6 @@
 # Limitations and release blockers
 
-- Pre-release source, with no published binary download or signed installer declared. See [ACCEPTANCE.md](ACCEPTANCE.md); source existence, compilation and unit tests do not establish a complete working MVP.
+- 1.0.0 is the first public release. Automated tests and CI builds pass; end-to-end acceptance on real deployments is tracked in [ACCEPTANCE.md](ACCEPTANCE.md). Binaries and the installer are not code-signed.
 - Target platforms: Windows 11 x64 desktop/service, Ubuntu 24.04 x86_64 relay. Linux desktop/macOS/mobile clients are outside MVP. Windows 10 is unverified.
 - IPv4 tunneling only. IPv6 must be reversibly blocked while connected; actual leak-prevention and restoration remain Windows acceptance checks. No IPv6 transport guarantee is made.
 - Multiple proxies sharing one physical access link cannot multiply its line rate. Aggregation is possible only when independent underlay/server limits leave spare client uplink capacity; relay, CPU and path skew can reduce performance.

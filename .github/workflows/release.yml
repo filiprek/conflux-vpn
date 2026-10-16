@@ -1,0 +1,140 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/conflux-relay
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+          cache: true
+      - run: go test ./...
+      - name: Build relay bundle
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          ldflags="-X github.com/filiprek/conflux-vpn/internal/version.Version=$version -X github.com/filiprek/conflux-vpn/internal/version.Commit=$GITHUB_SHA -X main.version=$version -X main.commit=$GITHUB_SHA"
+          bundle=out/conflux-relay
+          mkdir -p "$bundle" release
+          for cmd in conflux-relay conflux-bench; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o "$bundle/$cmd" "./cmd/$cmd"
+          done
+          cp deploy/relay/* LICENSE THIRD_PARTY_NOTICES.md "$bundle/"
+          "$bundle/conflux-relay" --version
+          tar -C out -czf release/conflux-relay-linux-amd64.tar.gz conflux-relay
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: |
+            release/
+            out/conflux-relay/conflux-relay
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Build
+        shell: pwsh
+        run: |
+          ./scripts/dev.ps1 frontend
+          ./scripts/dev.ps1 build
+      - name: Package
+        shell: pwsh
+        run: |
+          $stage = 'out/Conflux'
+          New-Item -ItemType Directory -Force $stage, release | Out-Null
+          Copy-Item dist/windows/* $stage -Recurse
+          Copy-Item deploy/windows/install.ps1, deploy/windows/uninstall.ps1, scripts/setup-windows.ps1 $stage
+          & "$stage/conflux-service.exe" --version
+          if ($LASTEXITCODE) { throw 'service binary does not run' }
+          Compress-Archive -Path "$stage/*" -DestinationPath release/Conflux-windows-amd64.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: release/
+
+  container:
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux
+          path: artifact
+      - name: Build image
+        run: |
+          mkdir -p .image
+          cp artifact/out/conflux-relay/conflux-relay deploy/docker/Dockerfile deploy/docker/entrypoint.sh .image/
+          chmod +x .image/conflux-relay .image/entrypoint.sh
+          docker build -t conflux-relay:release .image
+      - run: bash scripts/test-relay-container.sh conflux-relay:release
+      - name: Publish to GitHub Packages
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in "$version" "${version%.*}" latest; do
+            docker tag conflux-relay:release "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+          done
+
+  release:
+    needs: [linux, windows, container]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifact
+      - name: Collect assets
+        run: |
+          mkdir -p assets
+          cp artifact/linux/release/* artifact/windows/* assets/
+          (cd assets && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+      - name: Write release notes
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          {
+            echo '## Install'
+            echo
+            echo '**Windows 11 client** (normal PowerShell, not administrator):'
+            echo '```powershell'
+            echo '& ([scriptblock]::Create((irm https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-windows.ps1)))'
+            echo '```'
+            echo '**Relay** on Ubuntu 24.04:'
+            echo '```sh'
+            echo 'curl -fsSL https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-relay.sh | sudo bash'
+            echo '```'
+            echo "**Relay with Docker:** \`$IMAGE:$version\` (see README)."
+            echo
+            echo 'Verify downloads against `SHA256SUMS`. The Windows package does not bundle sing-box or Wintun; the setup script downloads and verifies them.'
+            echo
+            awk -v v="$version" '$0 ~ "^## " v "( |$)" {found = 1; next} found && /^## / {exit} found {print}' CHANGELOG.md
+          } > notes.md
+          cat notes.md
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" assets/* --title "Conflux $GITHUB_REF_NAME" --notes-file notes.md --verify-tag

@@ -4,7 +4,7 @@
 
 Conflux is a Windows 11 x64 IPv4 VPN client with an Ubuntu 24.04 relay. Bring your own UDP-capable VLESS paths: multiple ordinary QUIC connections carry one logical tunnel to one relay, whose public IP is the final Internet egress. The native Wails desktop supports English/Polish and light/dark/system appearance; a privileged background service owns networking.
 
-**Pre-release source. No published binary release or signed installer is declared. The complete MVP has not passed real Windows/Ubuntu deployment, leak, crash/reboot, two-proxy aggregation and soak acceptance.** Use a disposable test machine with console access. Read [limitations](docs/LIMITATIONS.md) and the [acceptance matrix](docs/ACCEPTANCE.md) before routing sensitive traffic.
+**Version 1.0.0 is the first public release** ([download](https://github.com/filiprek/conflux-vpn/releases/latest)). It passes the automated test suite and CI builds on Windows and Linux; full end-to-end acceptance on real deployments (leaks, crash/reboot, two-proxy aggregation, long soak) is still being collected. Try it on a test machine first. Read [limitations](docs/LIMITATIONS.md) and the [acceptance matrix](docs/ACCEPTANCE.md) before routing sensitive traffic.
 
 ```mermaid
 flowchart LR
@@ -32,7 +32,18 @@ You need two things: a relay server (Ubuntu 24.04 VPS) and the Windows 11 client
 curl -fsSL https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-relay.sh | sudo bash
 ```
 
-It builds the relay with a checksum-verified Go toolchain, installs the systemd service and prints a secret `conflux://...` enrollment line **once**. Copy it somewhere private. Add `-s -- --public-host relay.example.org` to use a DNS name instead of the auto-detected public IPv4. Allow inbound UDP 4433 in your cloud firewall.
+It installs the checksum-verified release bundle as a systemd service and prints the secret `conflux://...` enrollment line. Keep it private; print it again any time with `sudo conflux-relay --config /etc/conflux/relay.json --enrollment`. Add `-s -- --public-host relay.example.org` to use a DNS name instead of the auto-detected public IPv4. Allow inbound UDP 4433 in your cloud firewall.
+
+Prefer Docker? The relay image is published to GitHub Packages:
+
+```sh
+docker run -d --name conflux-relay --restart unless-stopped \
+  --cap-add NET_ADMIN --device /dev/net/tun --sysctl net.ipv4.ip_forward=1 \
+  -p 4433:4433/udp -v conflux-relay:/etc/conflux \
+  -e CONFLUX_PUBLIC_HOST=<your public IPv4 or DNS name> \
+  ghcr.io/filiprek/conflux-relay:1
+docker exec conflux-relay conflux-relay --config /etc/conflux/relay.json --enrollment
+```
 
 **2. Windows client** — in a normal (not administrator) PowerShell window, as the user who will use the VPN:
 
@@ -40,11 +51,11 @@ It builds the relay with a checksum-verified Go toolchain, installs the systemd 
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-windows.ps1)))
 ```
 
-It installs Git, Go 1.27.2 and Node.js 24 for your user if missing, clones the source to `%USERPROFILE%\conflux-vpn`, builds everything, downloads sing-box 1.14.3 and Wintun 0.14.1 from their official sites (SHA-256 pinned, Wintun signature checked), installs the service after one administrator prompt and opens Conflux.
+It downloads the latest release and checks it against `SHA256SUMS`, downloads sing-box 1.14.3 and Wintun 0.14.1 from their official sites (SHA-256 pinned, Wintun signature checked), installs the service after one administrator prompt and opens Conflux. No developer tools are needed. To build from source instead, add `-FromSource`.
 
 **3. Connect** — in Conflux: *Relay* → paste the enrollment and confirm its fingerprint; *Paths* → add at least two `vless://` links and **Test** each; *Overview* → **Connect**.
 
-Run either command again to update. `-BuildOnly` on the Windows script only builds without installing.
+Run either command again to update. Release files are also listed on the [releases page](https://github.com/filiprek/conflux-vpn/releases).
 
 ## Build from source manually
 
@@ -73,7 +84,7 @@ cd conflux-vpn
 
 If PowerShell refuses to run scripts, allow local scripts for your user once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. `./scripts/dev.ps1 check` adds gofmt/vet/PowerShell syntax checks and `./scripts/dev.ps1 security` runs govulncheck and npm audit.
 
-Core output: `dist/linux/conflux-relay`, `dist/linux/conflux-bench`, and `dist/windows/{conflux-service,confluxctl,conflux-bench}.exe`. Linux cross-build does not produce a Windows GUI. `make check` adds format/vet/race/shell checks. `make security` runs pinned govulncheck and npm audit. Full [test instructions](docs/TESTING.md) distinguish nested GUI-module tests and privileged checks. No release download or bundled third-party runtime is provided yet.
+Core output: `dist/linux/conflux-relay`, `dist/linux/conflux-bench`, and `dist/windows/{conflux-service,confluxctl,conflux-bench}.exe`. Linux cross-build does not produce a Windows GUI. `make check` adds format/vet/race/shell checks. `make security` runs pinned govulncheck and npm audit. Full [test instructions](docs/TESTING.md) distinguish nested GUI-module tests and privileged checks. Release packages do not bundle sing-box or Wintun; the setup script downloads and verifies them.
 
 The Windows GUI build needs WebView2 (preinstalled on Windows 11); `./scripts/dev.ps1 build` runs `scripts/build-windows.ps1`, which fetches the pinned Wails v2 CLI automatically. To package:
 

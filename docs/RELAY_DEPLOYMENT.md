@@ -10,7 +10,7 @@ sudo bash deploy/relay/install-relay.sh \
   --public-host relay.example.org
 ```
 
-Replace the hostname with your real public DNS name or IPv4 address. No domain, private key or server credential is included. Do not execute unreviewed scripts through curl-pipe-shell. There is no published release URL to download from in this repository.
+Replace the hostname with your real public DNS name or IPv4 address. No domain, private key or server credential is included. The quickest path is `scripts/setup-relay.sh` (see README), which installs the verified release bundle. Review scripts before piping them to a root shell.
 
 The installer installs nftables/iproute2/CA certificates, creates a dedicated non-login `conflux` account, generates certificate/key/token through `--init`, restricts secret files to owner mode 0600, configures `conflux0` at `10.250.0.1/16` MTU 1100 and enables IPv4 forwarding. The relay runs as `conflux` with CAP_NET_ADMIN, restrictive systemd sandbox and `/dev/net/tun` device allowance. A separate root oneshot unit owns network setup/cleanup and boot persistence. It never replaces `/etc/nftables.conf` or unrelated rules.
 

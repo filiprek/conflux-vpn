@@ -1,8 +1,15 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-10-16
 
-Initial Conflux implementation: versioned IPv4 multipath tunnel, Linux relay, Windows service and desktop, English/Polish interface and deployment tooling. No public binary release yet; see [acceptance status](docs/ACCEPTANCE.md).
+First public release: versioned IPv4 multipath tunnel over QUIC, Linux relay (systemd or Docker), Windows service and desktop app with English/Polish interface, and one-command setup for both sides. See [acceptance status](docs/ACCEPTANCE.md) for what has been verified on real deployments.
+
+### Added
+
+- Release packages: `Conflux-windows-amd64.zip`, `conflux-relay-linux-amd64.tar.gz` and `SHA256SUMS`, built by CI from the tag.
+- Relay container image `ghcr.io/filiprek/conflux-relay` in GitHub Packages, smoke-tested with TUN in CI.
+- `conflux-relay --enrollment` prints the enrollment line again for an installed relay.
+- The setup scripts install the verified release by default; `-FromSource` / `--from-source` builds from the repository.
 
 ### Fixed
 

@@ -34,6 +34,7 @@ func run() error {
 	check := flag.Bool("check", false, "validate configuration and TLS files without changing networking")
 	rotate := flag.Bool("rotate-token", false, "rotate enrollment token; restart relay afterwards")
 	health := flag.Bool("health", false, "verify local relay TLS, authentication and datagram round trips")
+	showEnrollment := flag.Bool("enrollment", false, "print the current secret enrollment line for clients")
 	showVersion := flag.Bool("version", false, "print build version")
 	flag.Parse()
 	if *showVersion {
@@ -62,6 +63,14 @@ func run() error {
 	}
 	if *check {
 		fmt.Println("relay configuration and TLS identity valid")
+		return nil
+	}
+	if *showEnrollment {
+		enrollment, err := config.Enrollment()
+		if err != nil {
+			return err
+		}
+		fmt.Println(enrollment)
 		return nil
 	}
 	if *health {
