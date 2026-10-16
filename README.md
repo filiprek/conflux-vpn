@@ -41,7 +41,7 @@ docker run -d --name conflux-relay --restart unless-stopped \
   --cap-add NET_ADMIN --device /dev/net/tun --sysctl net.ipv4.ip_forward=1 \
   -p 4433:4433/udp -v conflux-relay:/etc/conflux \
   -e CONFLUX_PUBLIC_HOST=<your public IPv4 or DNS name> \
-  ghcr.io/filiprek/conflux-relay:1
+  ghcr.io/filiprek/conflux-relay:1.0
 docker exec conflux-relay conflux-relay --config /etc/conflux/relay.json --enrollment
 ```
 
