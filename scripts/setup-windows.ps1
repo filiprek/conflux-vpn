@@ -120,7 +120,11 @@ function Install-Node {
 function Update-Source {
   if (Test-Path (Join-Path $Directory '.git')) {
     Write-Step "Updating $Directory"
-    Invoke-Native git @('-C', $Directory, 'pull', '--ff-only', 'origin', $Branch)
+    # The checkout is managed by this script: follow the remote branch exactly, but never
+    # discard edits someone made in it.
+    if (& git -C $Directory status --porcelain --untracked-files=no) { throw "$Directory has local changes; commit or discard them, then rerun." }
+    Invoke-Native git @('-C', $Directory, 'fetch', 'origin', $Branch)
+    Invoke-Native git @('-C', $Directory, 'checkout', '--quiet', '-B', $Branch, "origin/$Branch")
   } else {
     Write-Step "Cloning into $Directory"
     Invoke-Native git @('clone', '--branch', $Branch, $Repository, $Directory)
