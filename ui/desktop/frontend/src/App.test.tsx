@@ -336,3 +336,37 @@ describe("service failures", () => {
     await waitFor(() => expect(call).toHaveBeenCalledWith("recover", {}));
   });
 });
+describe("relay enrollment input", () => {
+  const status = { state: "disconnected", paths: [], mode: "bond", mtu: 1100 };
+  it("accepts a relay line wrapped across terminal lines", async () => {
+    const call = vi.fn(async () => status);
+    window.go = { main: { App: { Invoke: call } } };
+    render(<App />);
+    await screen.findByText("Disconnected");
+    fireEvent.click(screen.getByRole("button", { name: "Relay" }));
+    const uri = `conflux://203.0.113.7:4433?cert=MIIBabc&fp=${"cd".repeat(32)}&token=secret`;
+    fireEvent.change(screen.getByLabelText("Relay connection string"), {
+      target: { value: `${uri.slice(0, 40)}\r\n  ${uri.slice(40)}\n` },
+    });
+    expect(screen.getByText("cd".repeat(32))).toBeTruthy();
+    fireEvent.click(
+      screen.getByLabelText(
+        "I verified this fingerprint with my relay administrator.",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Import relay" }));
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("importRelay", { uri }),
+    );
+  });
+  it("explains why an invalid relay line cannot be imported", async () => {
+    window.go = { main: { App: { Invoke: async () => status } } };
+    render(<App />);
+    await screen.findByText("Disconnected");
+    fireEvent.click(screen.getByRole("button", { name: "Relay" }));
+    fireEvent.change(screen.getByLabelText("Relay connection string"), {
+      target: { value: "vless://uuid@example.com:443" },
+    });
+    expect(screen.getByText(/Not a valid relay line/)).toBeTruthy();
+  });
+});

@@ -76,6 +76,9 @@ export const en = {
   relayHint:
     "Verify the certificate fingerprint with your relay administrator before importing.",
   fingerprint: "Certificate fingerprint",
+  relayInvalid:
+    "Not a valid relay line. Paste the complete conflux://… line printed by the relay setup; line breaks are removed automatically.",
+  relayConfirmHint: "Confirm the fingerprint above to enable import.",
   address: "Address",
   noRelay: "No relay configured",
   testRelay: "Test relay",
@@ -188,6 +191,9 @@ export const pl: Record<MessageKey, string> = {
   relayHint:
     "Przed importem zweryfikuj odcisk certyfikatu u administratora serwera relay.",
   fingerprint: "Odcisk certyfikatu",
+  relayInvalid:
+    "To nie jest poprawna linia relay. Wklej całą linię conflux://… wypisaną przez instalator serwera; podziały wierszy są usuwane automatycznie.",
+  relayConfirmHint: "Potwierdź powyższy odcisk, aby włączyć import.",
   address: "Adres",
   noRelay: "Brak serwera relay",
   testRelay: "Testuj serwer relay",

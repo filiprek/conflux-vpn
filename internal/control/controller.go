@@ -147,6 +147,8 @@ func (c *Controller) Handle(ctx context.Context, q Request) (any, error) {
 		if err := decode(q.Params, &v); err != nil {
 			return nil, err
 		}
+		// Enrollment lines contain no whitespace; strip wrapping from terminal copies.
+		v.URI = strings.Join(strings.Fields(v.URI), "")
 		if _, err := protocol.ParseEnrollment(v.URI); err != nil {
 			return nil, errors.New("invalid relay enrollment string")
 		}

@@ -570,12 +570,18 @@ export function App() {
                     autoComplete="off"
                     spellCheck={false}
                     onChange={(e) => {
-                      setRelayURI(e.target.value);
+                      // Lines copied from a terminal often wrap; the format has no whitespace.
+                      setRelayURI(e.target.value.replace(/\s+/g, ""));
                       setVerified(false);
                     }}
                   />
                 </label>
                 <p className="hint">{t("relayHint")}</p>
+                {relayURI && !relayPreview && (
+                  <p className="inline-error" role="alert">
+                    {t("relayInvalid")}
+                  </p>
+                )}
                 {relayPreview && (
                   <>
                     <dl>
@@ -592,6 +598,9 @@ export function App() {
                       />
                       {t("verifyFingerprint")}
                     </label>
+                    {!verified && (
+                      <p className="hint">{t("relayConfirmHint")}</p>
+                    )}
                   </>
                 )}
                 <button

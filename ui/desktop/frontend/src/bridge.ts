@@ -77,25 +77,25 @@ export function pathSummary(uri: string): string | undefined {
 }
 
 // Preview only public enrollment fields. The service validates the certificate and pin.
+// Parsed explicitly: URL() host handling for custom schemes differs between engines.
 export function relaySummary(
   uri: string,
 ): { address: string; fingerprint: string } | undefined {
-  try {
-    const u = new URL(uri);
-    const fp = u.searchParams.get("fp");
-    if (
-      !["conflux:", "bondrelay:"].includes(u.protocol) ||
-      !u.hostname ||
-      !u.port ||
-      u.username ||
-      !fp ||
-      !/^[a-fA-F0-9]{64}$/.test(fp)
-    )
-      return undefined;
-    return { address: u.host, fingerprint: fp.toLowerCase() };
-  } catch {
+  const match = /^(?:conflux|bondrelay):\/\/([^/?#@\s]+)\/?\?([^#\s]*)$/i.exec(
+    uri.trim(),
+  );
+  if (!match) return undefined;
+  const address = match[1];
+  const hostPort = /^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+):(\d{1,5})$/.exec(
+    address,
+  );
+  if (!hostPort || Number(hostPort[2]) < 1 || Number(hostPort[2]) > 65535)
     return undefined;
-  }
+  const params = new URLSearchParams(match[2]);
+  const fp = params.get("fp");
+  if (!fp || !/^[a-fA-F0-9]{64}$/.test(fp) || !params.get("cert"))
+    return undefined;
+  return { address, fingerprint: fp.toLowerCase() };
 }
 
 export function parseOutbound(
