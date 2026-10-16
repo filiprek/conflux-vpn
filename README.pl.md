@@ -19,7 +19,31 @@ Bond wymaga przynajmniej dwóch faktycznie przetestowanych ścieżek. Poprawny l
 
 Dwa proxy korzystające z jednego łącza ISP nie zwielokrotnią jego fizycznej przepustowości. Możliwe korzyści to obejście ograniczeń serwerów, mniej przeciążeń i odporność, jeżeli istnieje wolna przepustowość. MVP tuneluje IPv4; IPv6 nie jest tunelowane, a odwracalna ochrona przed wyciekiem wymaga testów Windows. Projekt nie zawiera analityki, reklam, wysyłania raportów awarii ani telemetrii. Diagnostyka pozostaje lokalna, dopóki użytkownik sam jej nie udostępni.
 
-## Pobranie kodu i kompilacja
+## Szybka instalacja
+
+Potrzebujesz dwóch rzeczy: serwera relay (VPS z Ubuntu 24.04) i klienta na Windows 11. Każde to jedna komenda.
+
+**1. Relay** — na świeżym VPS z Ubuntu 24.04 x86_64, z rootem, TUN i otwartym przychodzącym UDP 4433:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-relay.sh | sudo bash
+```
+
+Skrypt buduje relay ze zweryfikowanym sumą kontrolną Go, instaluje usługę systemd i **jednorazowo** wypisuje tajną linię `conflux://...`. Zapisz ją w bezpiecznym miejscu. Dopisz `-s -- --public-host relay.example.org`, aby użyć nazwy DNS zamiast automatycznie wykrytego publicznego IPv4. Otwórz przychodzący UDP 4433 w firewallu dostawcy chmury.
+
+**2. Klient Windows** — w zwykłym (nie administratorskim) oknie PowerShell, jako użytkownik, który będzie korzystał z VPN:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-windows.ps1)))
+```
+
+Skrypt w razie potrzeby instaluje Git, Go 1.27.2 i Node.js 24 dla Twojego konta, klonuje kod do `%USERPROFILE%\conflux-vpn`, buduje całość, pobiera sing-box 1.14.3 i Wintun 0.14.1 z oficjalnych stron (przypięte SHA-256, weryfikacja podpisu Wintun), instaluje usługę po jednym potwierdzeniu administratora i otwiera Conflux.
+
+**3. Połączenie** — w Conflux: *Serwer relay* → wklej linię enrollment i potwierdź odcisk; *Ścieżki* → dodaj co najmniej dwa linki `vless://` i **Testuj** każdy; *Przegląd* → **Połącz**.
+
+Ponowne uruchomienie komendy aktualizuje instalację. Parametr `-BuildOnly` w skrypcie Windows tylko buduje, bez instalacji.
+
+## Ręczna kompilacja ze źródeł
 
 Zainstaluj oficjalne Go **1.27.2** (https://go.dev/dl/), Node.js **24** z npm i Git. Po instalacji otwórz nowy terminal, aby `go` było w `PATH`; `go env GOVERSION` musi zwrócić `go1.27.2`.
 

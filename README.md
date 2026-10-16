@@ -22,7 +22,31 @@ Bond mode needs at least two **actually tested** eligible paths. A parsed link o
 
 Two proxies over one physical ISP connection cannot multiply that connection's line rate. Benefits can include avoiding server caps/congestion and resilience, provided capacity exists. IPv6 tunneling is outside this IPv4 MVP; reversible IPv6 leak prevention must pass Windows acceptance. No analytics, advertising, remote crash upload or telemetry upload is included; diagnostics remain local unless manually shared.
 
-## Get source and build
+## Quick install
+
+You need two things: a relay server (Ubuntu 24.04 VPS) and the Windows 11 client. Each is one command.
+
+**1. Relay** — on a fresh Ubuntu 24.04 x86_64 VPS with root, TUN and inbound UDP 4433:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-relay.sh | sudo bash
+```
+
+It builds the relay with a checksum-verified Go toolchain, installs the systemd service and prints a secret `conflux://...` enrollment line **once**. Copy it somewhere private. Add `-s -- --public-host relay.example.org` to use a DNS name instead of the auto-detected public IPv4. Allow inbound UDP 4433 in your cloud firewall.
+
+**2. Windows client** — in a normal (not administrator) PowerShell window, as the user who will use the VPN:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/filiprek/conflux-vpn/main/scripts/setup-windows.ps1)))
+```
+
+It installs Git, Go 1.27.2 and Node.js 24 for your user if missing, clones the source to `%USERPROFILE%\conflux-vpn`, builds everything, downloads sing-box 1.14.3 and Wintun 0.14.1 from their official sites (SHA-256 pinned, Wintun signature checked), installs the service after one administrator prompt and opens Conflux.
+
+**3. Connect** — in Conflux: *Relay* → paste the enrollment and confirm its fingerprint; *Paths* → add at least two `vless://` links and **Test** each; *Overview* → **Connect**.
+
+Run either command again to update. `-BuildOnly` on the Windows script only builds without installing.
+
+## Build from source manually
 
 Install official Go **1.27.2** (https://go.dev/dl/), Node.js **24** with npm, and Git. Open a new terminal afterwards so `go` is on `PATH`; `go env GOVERSION` must print `go1.27.2`.
 

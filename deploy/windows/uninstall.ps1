@@ -36,6 +36,8 @@ foreach ($file in 'LICENSE','THIRD_PARTY_NOTICES.md') {
  $path=Join-Path $install $file
  if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
 }
+$shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Conflux.lnk'
+if (Test-Path -LiteralPath $shortcut) { Remove-Item -LiteralPath $shortcut -Force }
 $licenses=Join-Path $install 'licenses'
 if (Test-Path -LiteralPath $licenses) { Remove-Item -LiteralPath $licenses -Recurse -Force }
 if ($PurgeData) { Remove-Item -LiteralPath $data -Recurse -Force }

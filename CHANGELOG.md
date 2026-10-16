@@ -22,6 +22,7 @@ Initial Conflux implementation: versioned IPv4 multipath tunnel, Linux relay, Wi
 
 ### Changed
 
+- One-command setup: `scripts/setup-windows.ps1` installs the toolchain, builds and installs or upgrades the Windows client with verified sing-box and Wintun; `scripts/setup-relay.sh` builds and installs or upgrades the Ubuntu relay.
 - The desktop shows the service's reason when an operation fails (credentials, links and file paths are still redacted) and offers **Restore networking** when the service reports an incomplete network recovery.
 - `scripts/dev.ps1` provides the `test`, `frontend`, `check`, `build` and `security` tasks on Windows without `make` or bash.
 - The SOCKS UDP transport reuses one receive buffer per association instead of allocating 64 KiB per packet.
