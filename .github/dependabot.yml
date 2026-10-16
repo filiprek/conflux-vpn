@@ -11,6 +11,10 @@ updates:
     directory: /ui/desktop/frontend
     schedule:
       interval: monthly
+    ignore:
+      # typescript-eslint 8 supports TypeScript up to 6; upgrade both together.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       frontend:
         patterns: ["*"]
