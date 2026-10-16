@@ -102,7 +102,9 @@ func GenerateIdentity(host string) ([]byte, crypto.PrivateKey, error) {
 		return nil, nil, err
 	}
 	now := time.Now()
-	template := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "Conflux relay"}, NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
+	// Clients pin this exact certificate. A short validity would silently break every
+	// enrolled client on expiry, so identity rotation is an explicit re-enrollment instead.
+	template := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "Conflux relay"}, NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(10, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
 	if ip := net.ParseIP(host); ip != nil {
 		template.IPAddresses = []net.IP{ip}
 	} else if host != "" {

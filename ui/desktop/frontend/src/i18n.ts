@@ -26,7 +26,11 @@ export const en = {
   protected: "The service reports an active tunnel.",
   unprotected: "Traffic is not protected by Conflux.",
   uncertain: "Tunnel protection cannot be confirmed.",
-  recovering: "Some paths are degraded. The service is attempting recovery.",
+  recovering: "Recovering",
+  degradedHint: "Some paths are degraded. The service is attempting recovery.",
+  recover: "Restore networking",
+  recoverHint:
+    "The service could not fully undo its network changes. Restore networking before reconnecting.",
   connection: "Connection",
   bond: "Bond mode",
   connectionHint: "One logical tunnel across your enabled paths.",
@@ -133,8 +137,12 @@ export const pl: Record<MessageKey, string> = {
   protected: "Usługa zgłasza aktywny tunel.",
   unprotected: "Ruch nie jest chroniony przez Conflux.",
   uncertain: "Nie można potwierdzić ochrony tunelu.",
-  recovering:
+  recovering: "Przywracanie",
+  degradedHint:
     "Jakość części ścieżek jest obniżona. Usługa próbuje przywrócić połączenie.",
+  recover: "Przywróć sieć",
+  recoverHint:
+    "Usługa nie cofnęła w pełni swoich zmian sieciowych. Przywróć sieć przed ponownym połączeniem.",
   connection: "Połączenie",
   bond: "Tryb Bond",
   connectionHint: "Jeden logiczny tunel przez włączone ścieżki.",

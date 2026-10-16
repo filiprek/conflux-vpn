@@ -170,10 +170,13 @@ func validHost(s string) bool {
 	return true
 }
 
+// Path maps one loopback SOCKS inbound to one VLESS outbound. When Username is set,
+// the inbound requires those credentials so other local processes cannot use it.
 type Path struct {
-	ID   string
-	Port uint16
-	Node Node
+	ID                 string
+	Port               uint16
+	Node               Node
+	Username, Password string
 }
 
 func BuildConfig(paths []Path) ([]byte, error) {
@@ -187,13 +190,17 @@ func BuildConfig(paths []Path) ([]byte, error) {
 	rules := []any{}
 	for _, p := range paths {
 		n := p.Node
-		if p.ID == "" || len(p.ID) > 64 || ids[p.ID] || p.Port == 0 || ports[p.Port] || n.uuid == "" {
+		if p.ID == "" || len(p.ID) > 64 || ids[p.ID] || p.Port == 0 || ports[p.Port] || n.uuid == "" || (p.Username == "") != (p.Password == "") {
 			return nil, invalid()
 		}
 		ids[p.ID] = true
 		ports[p.Port] = true
 		it, ot := "in-"+p.ID, "out-"+p.ID
-		in = append(in, map[string]any{"type": "socks", "tag": it, "listen": "127.0.0.1", "listen_port": p.Port})
+		inbound := map[string]any{"type": "socks", "tag": it, "listen": "127.0.0.1", "listen_port": p.Port}
+		if p.Username != "" {
+			inbound["users"] = []any{map[string]string{"username": p.Username, "password": p.Password}}
+		}
+		in = append(in, inbound)
 		o := map[string]any{"type": "vless", "tag": ot, "server": n.server, "server_port": n.port, "uuid": n.uuid}
 		if n.flow != "" {
 			o["flow"] = n.flow

@@ -48,7 +48,7 @@ export function App() {
   const [status, setStatus] = useState<Status>();
   const [unavailable, setUnavailable] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [replacement, setReplacement] = useState("");
   const [uri, setURI] = useState("");
@@ -145,7 +145,7 @@ export function App() {
   ) {
     if (busy) return;
     setBusy(true);
-    setError(false);
+    setError("");
     setNotice("");
     try {
       const result = await invoke<{ path?: string }>(method, params);
@@ -153,8 +153,15 @@ export function App() {
       if (method === "diagnostics" && result.path) setNotice(result.path);
       else if (method === "testRelay") setNotice("relayTested");
       await refresh();
-    } catch {
-      setError(true);
+    } catch (failure) {
+      // Wails rejects with the service's sanitized reason as a string.
+      const reason =
+        typeof failure === "string"
+          ? failure
+          : failure instanceof Error
+            ? failure.message
+            : "";
+      setError(reason.trim() || "failed");
     } finally {
       setBusy(false);
     }
@@ -285,7 +292,7 @@ export function App() {
               onClick={() => {
                 setScreen(item);
                 setNotice("");
-                setError(false);
+                setError("");
               }}
             >
               <span aria-hidden="true">{icons[item]}</span>
@@ -319,6 +326,9 @@ export function App() {
         {error && (
           <section className="alert" role="alert">
             <strong>{t("operationFailed")}</strong>
+            {!["failed", "serviceUnavailable"].includes(error) && (
+              <p className="inline-error">{error}</p>
+            )}
             <p>
               {active
                 ? t("protected")
@@ -353,7 +363,15 @@ export function App() {
                   <p className="inline-error">{status.lastError}</p>
                 )}
                 {status?.state === "degraded" && (
-                  <p className="warning">{t("recovering")}</p>
+                  <p className="warning">{t("degradedHint")}</p>
+                )}
+                {status?.state === "error" && (
+                  <>
+                    <p className="hint">{t("recoverHint")}</p>
+                    <button disabled={busy} onClick={() => void run("recover")}>
+                      {t("recover")}
+                    </button>
+                  </>
                 )}
               </div>
               <button

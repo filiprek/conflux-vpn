@@ -254,10 +254,13 @@ func (e *Endpoint) Attach(ctx context.Context, id string, conn *quic.Conn) error
 			e.mu.Lock()
 			defer e.mu.Unlock()
 			total := p.metrics.SentBytes + p.metrics.ReceivedBytes
-			sample := float64(total-p.rateBytes) / now.Sub(p.rateAt).Seconds()
-			p.metrics.BytesPerSecond = .25*sample + .75*p.metrics.BytesPerSecond
-			p.rateBytes = total
-			p.rateAt = now
+			// A zero interval (coarse clocks) would yield NaN, which breaks JSON status forever.
+			if elapsed := now.Sub(p.rateAt).Seconds(); elapsed > 0 {
+				sample := float64(total-p.rateBytes) / elapsed
+				p.metrics.BytesPerSecond = .25*sample + .75*p.metrics.BytesPerSecond
+				p.rateBytes = total
+				p.rateAt = now
+			}
 			if now.Sub(p.lastPong) > 2*time.Second {
 				return false
 			}

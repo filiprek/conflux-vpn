@@ -4,6 +4,7 @@ import (
 	"github.com/filiprek/conflux-vpn/internal/protocol"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -26,8 +27,8 @@ func TestInitializeConfiguration(t *testing.T) {
 	if len(c.Token) < 32 || c.MTU != 1100 {
 		t.Fatal("unsafe defaults")
 	}
-	st, _ := os.Stat(p)
-	if st.Mode().Perm() != 0600 {
+	// Windows has no POSIX permission bits; the relay targets Linux.
+	if st, _ := os.Stat(p); runtime.GOOS != "windows" && st.Mode().Perm() != 0600 {
 		t.Fatal("config permissions")
 	}
 	if _, e = Initialize(p, "127.0.0.1", ":4433"); e == nil {

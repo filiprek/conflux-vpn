@@ -174,3 +174,52 @@ func TestAddressRoundTripBounds(t *testing.T) {
 		}
 	}
 }
+func TestUsernamePasswordAuthentication(t *testing.T) {
+	for _, accept := range []bool{true, false} {
+		l, e := net.Listen("tcp", "127.0.0.1:0")
+		if e != nil {
+			t.Fatal(e)
+		}
+		udp, e := net.ListenPacket("udp", "127.0.0.1:0")
+		if e != nil {
+			t.Fatal(e)
+		}
+		go func() {
+			c, e := l.Accept()
+			if e != nil {
+				return
+			}
+			defer c.Close()
+			greeting := make([]byte, 3)
+			if _, e = io.ReadFull(c, greeting); e != nil || !bytes.Equal(greeting, []byte{5, 1, 2}) {
+				return
+			}
+			c.Write([]byte{5, 2})
+			auth := make([]byte, 2+4+1+6)
+			if _, e = io.ReadFull(c, auth); e != nil {
+				return
+			}
+			if !accept || !bytes.Equal(auth, []byte("\x01\x04user\x06secret")) {
+				c.Write([]byte{1, 1})
+				return
+			}
+			c.Write([]byte{1, 0})
+			io.ReadFull(c, make([]byte, 10))
+			a := udp.LocalAddr().(*net.UDPAddr)
+			c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, byte(a.Port >> 8), byte(a.Port)})
+			io.Copy(io.Discard, c)
+		}()
+		c, e := DialAuth(context.Background(), l.Addr().String(), "user", "secret")
+		if accept != (e == nil) {
+			t.Fatalf("accept=%v err=%v", accept, e)
+		}
+		if c != nil {
+			c.Close()
+		}
+		l.Close()
+		udp.Close()
+	}
+	if _, e := DialAuth(context.Background(), "127.0.0.1:1", "user", ""); e == nil {
+		t.Fatal("partial credentials accepted")
+	}
+}

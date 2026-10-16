@@ -300,10 +300,11 @@ func (c *Controller) diagnostics() (any, error) {
 	if err = f.Close(); err != nil {
 		return nil, err
 	}
-	ok = true
+	// The archive is removed by the deferred cleanup unless its ACL is applied.
 	if err = permitExport(name, c.ownerSID); err != nil {
 		return nil, err
 	}
+	ok = true
 	abs, err := filepath.Abs(name)
 	if err != nil {
 		return nil, err

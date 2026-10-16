@@ -44,6 +44,7 @@ type Server struct {
 	mu, deviceMu    sync.Mutex
 	config          Config
 	sessions        map[string]*session
+	byIP            map[netip.Addr]*session
 	listener        *quic.Listener
 	pc              net.PacketConn
 	ctx             context.Context
@@ -73,7 +74,7 @@ func New(config Config) (*Server, error) {
 	if config.MaxSessions < 1 || config.MaxSessions > 1024 {
 		return nil, errors.New("invalid session limit")
 	}
-	return &Server{config: config, sessions: make(map[string]*session), done: make(chan struct{}), slots: make(chan struct{}, 64)}, nil
+	return &Server{config: config, sessions: make(map[string]*session), byIP: make(map[netip.Addr]*session), done: make(chan struct{}), slots: make(chan struct{}, 64)}, nil
 }
 func (s *Server) Addr() net.Addr {
 	s.mu.Lock()
@@ -111,10 +112,18 @@ func (s *Server) Serve(ctx context.Context, pc net.PacketConn) error {
 		if err != nil {
 			break
 		}
+		// Slots bound unauthenticated handshakes only; handle releases its slot once
+		// the path is authenticated so long-lived paths do not exhaust capacity.
 		select {
 		case s.slots <- struct{}{}:
 			s.wg.Add(1)
-			go func() { defer s.wg.Done(); defer func() { <-s.slots }(); s.handle(conn) }()
+			go func() {
+				defer s.wg.Done()
+				var once sync.Once
+				release := func() { once.Do(func() { <-s.slots }) }
+				defer release()
+				s.handle(conn, release)
+			}()
 		default:
 			conn.CloseWithError(1, "relay busy")
 		}
@@ -158,7 +167,7 @@ func (s *Server) Close() error {
 	}
 	return nil
 }
-func (s *Server) handle(conn *quic.Conn) {
+func (s *Server) handle(conn *quic.Conn, authenticated func()) {
 	defer conn.CloseWithError(0, "path closed")
 	ctx, cancel := context.WithTimeout(s.ctx, 4*time.Second)
 	defer cancel()
@@ -191,6 +200,7 @@ func (s *Server) handle(conn *quic.Conn) {
 		reject("QUIC DATAGRAM required")
 		return
 	}
+	authenticated()
 	s.mu.Lock()
 	ss := s.sessions[h.SessionID]
 	if ss == nil {
@@ -199,11 +209,7 @@ func (s *Server) handle(conn *quic.Conn) {
 			reject("relay session limit reached")
 			return
 		}
-		used := make(map[netip.Addr]bool, len(s.sessions))
-		for _, other := range s.sessions {
-			used[other.ip] = true
-		}
-		ip, err := nextAddress(s.config.Subnet, used)
+		ip, err := nextAddress(s.config.Subnet, s.byIP)
 		if err != nil {
 			s.mu.Unlock()
 			reject("relay address pool exhausted")
@@ -238,6 +244,7 @@ func (s *Server) handle(conn *quic.Conn) {
 			return err
 		})
 		s.sessions[h.SessionID] = ss
+		s.byIP[ip] = ss
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
@@ -267,8 +274,7 @@ func (s *Server) handle(conn *quic.Conn) {
 		if protocol.ReadControl(stream, &cmd) == nil && cmd.Type == "close-session" {
 			s.mu.Lock()
 			if s.sessions[ss.id] == ss {
-				delete(s.sessions, ss.id)
-				ss.cancel()
+				s.removeLocked(ss)
 			}
 			s.mu.Unlock()
 			_ = protocol.WriteControl(stream, protocol.Command{Type: "closed"})
@@ -296,13 +302,7 @@ func (s *Server) readDevice() {
 			continue
 		}
 		s.mu.Lock()
-		var target *session
-		for _, ss := range s.sessions {
-			if ss.ip == dst {
-				target = ss
-				break
-			}
-		}
+		target := s.byIP[dst]
 		s.mu.Unlock()
 		if target != nil {
 			target.endpoint.Send(b[:n])
@@ -319,15 +319,23 @@ func (s *Server) reap() {
 			return
 		case now := <-ticker.C:
 			s.mu.Lock()
-			for id, ss := range s.sessions {
+			for _, ss := range s.sessions {
 				if len(ss.paths) == 0 && now.Sub(ss.last) > time.Minute {
-					ss.cancel()
-					delete(s.sessions, id)
+					s.removeLocked(ss)
 				}
 			}
 			s.mu.Unlock()
 		}
 	}
+}
+
+// removeLocked forgets a session and stops its endpoint. The caller holds s.mu.
+func (s *Server) removeLocked(ss *session) {
+	delete(s.sessions, ss.id)
+	if s.byIP[ss.ip] == ss {
+		delete(s.byIP, ss.ip)
+	}
+	ss.cancel()
 }
 
 func (s *Server) fail(err error) {

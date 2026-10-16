@@ -5,9 +5,9 @@ import (
 	"net/netip"
 )
 
-func nextAddress(prefix netip.Prefix, used map[netip.Addr]bool) (netip.Addr, error) {
+func nextAddress[V any](prefix netip.Prefix, used map[netip.Addr]V) (netip.Addr, error) {
 	for ip := prefix.Addr().Next().Next(); prefix.Contains(ip) && prefix.Contains(ip.Next()); ip = ip.Next() {
-		if !used[ip] {
+		if _, taken := used[ip]; !taken {
 			return ip, nil
 		}
 	}

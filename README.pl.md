@@ -21,7 +21,9 @@ Dwa proxy korzystające z jednego łącza ISP nie zwielokrotnią jego fizycznej 
 
 ## Pobranie kodu i kompilacja
 
-Zainstaluj zweryfikowane oficjalne Go **1.27.2**, Node.js **24** z npm i Git. `go env GOVERSION` musi zwrócić `go1.27.2` — program o tej samej nazwie może być innym narzędziem.
+Zainstaluj oficjalne Go **1.27.2** (https://go.dev/dl/), Node.js **24** z npm i Git. Po instalacji otwórz nowy terminal, aby `go` było w `PATH`; `go env GOVERSION` musi zwrócić `go1.27.2`.
+
+Na Linuksie/macOS (bash i make):
 
 ```sh
 git clone https://github.com/filiprek/conflux-vpn.git
@@ -32,12 +34,23 @@ make frontend
 make build
 ```
 
-Wyniki: `dist/linux/conflux-relay`, `dist/linux/conflux-bench` i `dist/windows/{conflux-service,confluxctl,conflux-bench}.exe`. Kompilacja krzyżowa na Linuksie nie tworzy natywnego GUI Windows. `make check` uruchamia formatowanie kontrolne, testy, vet, race i kontrolę składni skryptów. `make security` uruchamia przypięty govulncheck i npm audit. [Instrukcja testów](docs/TESTING.md) opisuje osobny moduł GUI i testy administracyjne. Nie podajemy fikcyjnego adresu pobrania wydania.
-
-Na Windows zainstaluj oficjalne wymagania stabilnego Wails v2, w tym WebView2, Go 1.27.2 i Node 24. W PowerShell:
+Na Windows `make` ani bash nie są potrzebne. W PowerShell:
 
 ```powershell
-./scripts/build-windows.ps1
+git clone https://github.com/filiprek/conflux-vpn.git
+cd conflux-vpn
+./scripts/dev.ps1 test       # testy Go (moduł główny i GUI)
+./scripts/dev.ps1 frontend   # npm ci, typecheck, lint, testy, build
+./scripts/dev.ps1 build      # usługa, CLI, bench oraz GUI Conflux.exe
+```
+
+Jeżeli PowerShell blokuje uruchamianie skryptów, jednorazowo zezwól na lokalne skrypty dla swojego konta: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. `./scripts/dev.ps1 check` dodaje kontrolę gofmt/vet/składni PowerShell, a `./scripts/dev.ps1 security` uruchamia govulncheck i npm audit.
+
+Wyniki: `dist/linux/conflux-relay`, `dist/linux/conflux-bench` i `dist/windows/{conflux-service,confluxctl,conflux-bench}.exe`. Kompilacja krzyżowa na Linuksie nie tworzy natywnego GUI Windows. `make check` uruchamia formatowanie kontrolne, testy, vet, race i kontrolę składni skryptów. `make security` uruchamia przypięty govulncheck i npm audit. [Instrukcja testów](docs/TESTING.md) opisuje osobny moduł GUI i testy administracyjne.
+
+Budowanie GUI na Windows wymaga WebView2 (preinstalowany w Windows 11); `./scripts/dev.ps1 build` uruchamia `scripts/build-windows.ps1`, który sam pobiera przypiętą wersję Wails v2 CLI. Pakowanie:
+
+```powershell
 # Po osobnej instalacji NSIS 3.11:
 makensis deploy/windows/conflux.nsi
 ```

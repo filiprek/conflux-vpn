@@ -3,6 +3,7 @@ export type Method =
   | "configure"
   | "connect"
   | "disconnect"
+  | "recover"
   | "testPath"
   | "diagnostics"
   | "importRelay"

@@ -1,0 +1,5 @@
+# Keep LF everywhere so shell scripts copied from a Windows checkout still run on
+# the Linux relay and gofmt sees canonical sources.
+* text=auto eol=lf
+*.png binary
+*.ico binary

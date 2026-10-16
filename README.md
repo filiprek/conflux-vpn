@@ -24,7 +24,9 @@ Two proxies over one physical ISP connection cannot multiply that connection's l
 
 ## Get source and build
 
-Install verified official Go **1.27.2**, Node.js **24**/npm and Git. Do not use an unrelated program named `go`; `go env GOVERSION` must return `go1.27.2`. From a clean checkout:
+Install official Go **1.27.2** (https://go.dev/dl/), Node.js **24** with npm, and Git. Open a new terminal afterwards so `go` is on `PATH`; `go env GOVERSION` must print `go1.27.2`.
+
+On Linux/macOS (bash and make):
 
 ```sh
 git clone https://github.com/filiprek/conflux-vpn.git
@@ -35,12 +37,23 @@ make frontend
 make build
 ```
 
-Core output: `dist/linux/conflux-relay`, `dist/linux/conflux-bench`, and `dist/windows/{conflux-service,confluxctl,conflux-bench}.exe`. Linux cross-build does not produce a Windows GUI. `make check` adds format/vet/race/shell checks. `make security` runs pinned govulncheck and npm audit. Full [test instructions](docs/TESTING.md) distinguish nested GUI-module tests and privileged checks. No fabricated release download link or bundled unverified runtime is provided.
-
-For Windows, install official stable Wails v2 prerequisites including WebView2, Go 1.27.2 and Node 24, then run in PowerShell:
+On Windows, `make` and bash are not required. In PowerShell:
 
 ```powershell
-./scripts/build-windows.ps1
+git clone https://github.com/filiprek/conflux-vpn.git
+cd conflux-vpn
+./scripts/dev.ps1 test       # Go tests (root and desktop modules)
+./scripts/dev.ps1 frontend   # npm ci, typecheck, lint, tests, build
+./scripts/dev.ps1 build      # service, CLI, bench and the Conflux.exe GUI
+```
+
+If PowerShell refuses to run scripts, allow local scripts for your user once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. `./scripts/dev.ps1 check` adds gofmt/vet/PowerShell syntax checks and `./scripts/dev.ps1 security` runs govulncheck and npm audit.
+
+Core output: `dist/linux/conflux-relay`, `dist/linux/conflux-bench`, and `dist/windows/{conflux-service,confluxctl,conflux-bench}.exe`. Linux cross-build does not produce a Windows GUI. `make check` adds format/vet/race/shell checks. `make security` runs pinned govulncheck and npm audit. Full [test instructions](docs/TESTING.md) distinguish nested GUI-module tests and privileged checks. No release download or bundled third-party runtime is provided yet.
+
+The Windows GUI build needs WebView2 (preinstalled on Windows 11); `./scripts/dev.ps1 build` runs `scripts/build-windows.ps1`, which fetches the pinned Wails v2 CLI automatically. To package:
+
+```powershell
 # With NSIS 3.11 installed separately:
 makensis deploy/windows/conflux.nsi
 ```
@@ -61,7 +74,7 @@ Substitute your real public hostname or IPv4. The script generates TLS identity 
 
 ## Install and use Windows
 
-Download sing-box **1.14.3** from its official upstream and independently authenticate the archive checksum; keep the GPL license/source information. Obtain official amd64 Wintun from https://www.wintun.net/, verify its distribution terms, trusted hash and valid WireGuard Authenticode signature. Neither runtime is silently downloaded or included here. Wintun prebuilt license/hash verification remains a release blocker in this environment. See [third-party notices](THIRD_PARTY_NOTICES.md).
+Download sing-box **1.14.3** from its official upstream and independently authenticate the archive checksum; keep the GPL license/source information. Obtain official amd64 Wintun from https://www.wintun.net/, verify its distribution terms, trusted hash and valid WireGuard Authenticode signature. Neither runtime is silently downloaded or included here. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 Determine the desktop user's SID before elevating with `[Security.Principal.WindowsIdentity]::GetCurrent().User.Value`. Run PowerShell as administrator, using that SID, actual verified runtime paths and expected SHA-256 values:
 
@@ -72,7 +85,7 @@ Determine the desktop user's SID before elevating with `[Security.Principal.Wind
   -Wintun 'C:/verified/wintun.dll' -WintunSHA256 '<64 hex characters>'
 ```
 
-The GUI runs unprivileged as the configured owner; installation places privileged files under administrator/SYSTEM ACLs. The NSIS wrapper accepts equivalent `/OWNER_SID=`, `/SINGBOX=`, `/SINGBOX_SHA256=`, `/WINTUN=`, `/WINTUN_SHA256=` arguments. It is unsigned; a trusted production publisher identity is not claimed.
+The GUI runs unprivileged as the configured owner; installation places privileged files under administrator/SYSTEM ACLs. The NSIS wrapper accepts equivalent `/OWNER_SID=`, `/SINGBOX=`, `/SINGBOX_SHA256=`, `/WINTUN=`, `/WINTUN_SHA256=` arguments. It is unsigned.
 
 1. Open `%ProgramFiles%/Conflux/Conflux.exe` as the intended owner.
 2. Import the relay's secret enrollment privately, checking the fingerprint through your trusted channel.
@@ -81,7 +94,7 @@ The GUI runs unprivileged as the configured owner; installation places privilege
 5. Connect and wait for authoritative service status. Confirm both paths carry real counters, IPv4 egress is the relay, DNS follows the tunnel and IPv6 does not leak.
 6. In a controlled transfer, fail one path, observe remaining-path traffic and recovery, then disconnect and verify original networking is restored.
 
-These are acceptance steps to execute, not results claimed here. [Controlled lab requirements](docs/LAB_ACCEPTANCE.md) describe equal-cap, RTT-skew, failure and soak scenarios. No throughput results have been invented.
+These are acceptance steps to run on your own setup. [Controlled lab requirements](docs/LAB_ACCEPTANCE.md) describe equal-cap, RTT-skew, failure and soak scenarios.
 
 ## Recover and uninstall
 

@@ -300,3 +300,39 @@ it("imports an advanced outbound object without persisting credentials", async (
     "private-uuid",
   );
 });
+describe("service failures", () => {
+  it("shows the service reason for a failed operation", async () => {
+    window.go = {
+      main: {
+        App: {
+          Invoke: async (method) => {
+            if (method === "connect")
+              throw "enable at least two VLESS paths for Bond";
+            return { state: "disconnected", paths: [], mode: "bond", mtu: 1100 };
+          },
+        },
+      },
+    };
+    render(<App />);
+    await screen.findByText("Disconnected");
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(
+      await screen.findByText("enable at least two VLESS paths for Bond"),
+    ).toBeTruthy();
+  });
+  it("offers network recovery when the service reports an error", async () => {
+    const call = vi.fn(async () => ({
+      state: "error",
+      paths: [],
+      mode: "bond",
+      mtu: 1100,
+      lastError: "network recovery incomplete",
+    }));
+    window.go = { main: { App: { Invoke: call } } };
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Restore networking" }),
+    );
+    await waitFor(() => expect(call).toHaveBeenCalledWith("recover", {}));
+  });
+});

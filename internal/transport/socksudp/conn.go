@@ -31,11 +31,23 @@ type Conn struct {
 	relay   *net.UDPAddr
 	once    sync.Once
 	closed  chan struct{}
+	readMu  sync.Mutex
+	frame   []byte
 }
 
 var _ net.PacketConn = (*Conn)(nil)
 
+// Dial associates without authentication.
 func Dial(ctx context.Context, proxyAddress string) (*Conn, error) {
+	return DialAuth(ctx, proxyAddress, "", "")
+}
+
+// DialAuth associates using RFC 1929 username/password authentication when
+// username is non-empty, so other local processes cannot use the loopback proxy.
+func DialAuth(ctx context.Context, proxyAddress, username, password string) (*Conn, error) {
+	if len(username) > 255 || len(password) > 255 || (username == "") != (password == "") {
+		return nil, errors.New("invalid SOCKS credentials")
+	}
 	host, _, e := net.SplitHostPort(proxyAddress)
 	if e != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
 		return nil, errors.New("SOCKS server must be a literal loopback address")
@@ -59,15 +71,32 @@ func Dial(ctx context.Context, proxyAddress string) (*Conn, error) {
 	// Cancellation must interrupt the handshake even when the caller has no deadline.
 	stop := context.AfterFunc(ctx, func() { control.Close() })
 	defer stop()
-	if e = writeAll(control, []byte{5, 1, 0}); e != nil {
+	method := byte(0)
+	if username != "" {
+		method = 2
+	}
+	if e = writeAll(control, []byte{5, 1, method}); e != nil {
 		return nil, e
 	}
 	r := make([]byte, 2)
 	if _, e = io.ReadFull(control, r); e != nil {
 		return nil, e
 	}
-	if r[0] != 5 || r[1] != 0 {
-		return nil, errors.New("SOCKS no-auth negotiation rejected")
+	if r[0] != 5 || r[1] != method {
+		return nil, errors.New("SOCKS authentication negotiation rejected")
+	}
+	if method == 2 {
+		auth := append([]byte{1, byte(len(username))}, username...)
+		auth = append(append(auth, byte(len(password))), password...)
+		if e = writeAll(control, auth); e != nil {
+			return nil, e
+		}
+		if _, e = io.ReadFull(control, r); e != nil {
+			return nil, e
+		}
+		if r[0] != 1 || r[1] != 0 {
+			return nil, errors.New("SOCKS authentication failed")
+		}
 	}
 	local := net.IPv4(127, 0, 0, 1)
 	network := "udp4"
@@ -111,7 +140,7 @@ func Dial(ctx context.Context, proxyAddress string) (*Conn, error) {
 		return nil, errors.New("SOCKS relay address family mismatch")
 	}
 	control.SetDeadline(time.Time{})
-	c := &Conn{udp: udp, control: control, relay: relay, closed: make(chan struct{})}
+	c := &Conn{udp: udp, control: control, relay: relay, closed: make(chan struct{}), frame: make([]byte, maxFrame+1)}
 	ok = true
 	go func() { io.Copy(io.Discard, io.LimitReader(control, 1)); c.Close() }()
 	go func() {
@@ -249,19 +278,23 @@ func (c *Conn) WriteTo(b []byte, a net.Addr) (int, error) {
 	}
 	return len(b), nil
 }
+
+// ReadFrom reuses one receive buffer per association; it runs once per packet.
+// Malformed or foreign datagrams are skipped rather than failing the transport.
 func (c *Conn) ReadFrom(b []byte) (int, net.Addr, error) {
-	frame := make([]byte, maxFrame+1)
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
 	for {
-		n, a, e := c.udp.ReadFromUDP(frame)
+		n, a, e := c.udp.ReadFromUDP(c.frame)
 		if e != nil {
 			return 0, nil, e
 		}
 		if !a.IP.Equal(c.relay.IP) || a.Port != c.relay.Port {
 			continue
 		}
-		payload, target, e := decode(frame[:n])
+		payload, target, e := decode(c.frame[:n])
 		if e != nil {
-			return 0, nil, e
+			continue
 		}
 		if len(payload) > len(b) {
 			return 0, nil, io.ErrShortBuffer

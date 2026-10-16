@@ -43,6 +43,7 @@ func TestSecretDoesNotAppearInStatusOrDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.ownerSID = testOwnerSID(t)
 	uri := "vless://12345678-1234-4234-8234-123456789abc@example.com:443?security=tls&sni=example.com#My%20node"
 	p, _ := json.Marshal(map[string]string{"uri": uri})
 	if _, err = c.Handle(context.Background(), Request{Version: 1, Method: "importPath", Params: p}); err != nil {

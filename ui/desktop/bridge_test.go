@@ -31,3 +31,17 @@ func TestRejectOversizedRequest(t *testing.T) {
 		t.Fatal("oversized request accepted")
 	}
 }
+func TestPublicErrorRedactsSensitiveDetails(t *testing.T) {
+	for in, want := range map[string]string{
+		"MTU must be 576..1100":                     "MTU must be 576..1100",
+		"network activation: failed\nrecovery done": "network activation: failed recovery done",
+		"bad vless://uuid@example.com:443":          "service operation failed",
+		`open C:\ProgramData\Conflux\secrets.dat`:   "service operation failed",
+		strings.Repeat("x", 301):                    "service operation failed",
+		"":                                          "service operation failed",
+	} {
+		if got := publicError(in); got != want {
+			t.Fatalf("publicError(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

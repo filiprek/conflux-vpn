@@ -88,3 +88,16 @@ func FuzzAdvancedOutbound(f *testing.F) {
 	f.Add([]byte(`{"type":"vless"}`))
 	f.Fuzz(func(t *testing.T, b []byte) { ParseAdvancedOutbound(b) })
 }
+func TestConfigRequiresCompleteInboundCredentials(t *testing.T) {
+	n, _ := ParseVLESS(baseURI + "?security=tls")
+	if _, err := BuildConfig([]Path{{ID: "a", Port: 13001, Node: n, Username: "user"}}); err == nil {
+		t.Fatal("accepted username without password")
+	}
+	b, err := BuildConfig([]Path{{ID: "a", Port: 13001, Node: n, Username: "user", Password: "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"users":[{"password":"secret","username":"user"}]`) {
+		t.Fatalf("inbound credentials missing: %s", b)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync/atomic"
 )
 
@@ -30,7 +31,7 @@ type response struct {
 
 func (a *App) Invoke(method string, params map[string]any) (json.RawMessage, error) {
 	switch method {
-	case "status", "configure", "connect", "disconnect", "testPath", "diagnostics", "importRelay", "importPath", "deletePath", "updatePath", "testRelay":
+	case "status", "configure", "connect", "disconnect", "recover", "testPath", "diagnostics", "importRelay", "importPath", "deletePath", "updatePath", "testRelay":
 	default:
 		return nil, errors.New("unsupported service command")
 	}
@@ -59,12 +60,21 @@ func decodeResponse(reader io.Reader, id string) (json.RawMessage, error) {
 	if response.Version != 1 || response.ID != id {
 		return nil, errors.New("service protocol mismatch")
 	}
-	// Service details may contain paths or credentials. Return a fixed message to Wails.
 	if response.Error != "" {
-		return nil, errors.New("service operation failed")
+		return nil, errors.New(publicError(response.Error))
 	}
 	if len(response.Result) == 0 {
 		return json.RawMessage(`null`), nil
 	}
 	return response.Result, nil
+}
+
+// publicError forwards the service's short operator-facing reason so the user can act
+// on it. Anything that could carry a link, credential or file path is replaced.
+func publicError(message string) string {
+	message = strings.Join(strings.Fields(message), " ")
+	if message == "" || len(message) > 300 || strings.ContainsAny(message, `@\`) || strings.Contains(message, "://") {
+		return "service operation failed"
+	}
+	return message
 }

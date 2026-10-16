@@ -9,6 +9,7 @@ import (
 	"golang.zx2c4.com/wintun"
 	"io"
 	"sync"
+	"sync/atomic"
 )
 
 type Device struct {
@@ -17,6 +18,7 @@ type Device struct {
 	session wintun.Session
 	stop    windows.Handle
 	closed  bool
+	closing atomic.Bool
 }
 
 func Open(name string, mtu int) (io.ReadWriteCloser, error) {
@@ -49,11 +51,13 @@ func (d *Device) Read(b []byte) (int, error) {
 		}
 		p, err := d.session.ReceivePacket()
 		if err == nil {
+			// An oversized packet is dropped; truncating it or failing would end the tunnel.
+			if len(p) > len(b) {
+				d.session.ReleaseReceivePacket(p)
+				continue
+			}
 			n := copy(b, p)
 			d.session.ReleaseReceivePacket(p)
-			if n < len(p) {
-				return n, io.ErrShortBuffer
-			}
 			return n, nil
 		}
 		if !errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
@@ -86,6 +90,11 @@ func (d *Device) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 func (d *Device) Close() error {
+	// Wake a blocked Read before taking the write lock. Only the first Close may
+	// signal: later calls would use a handle that has already been closed.
+	if !d.closing.CompareAndSwap(false, true) {
+		return nil
+	}
 	_ = windows.SetEvent(d.stop)
 	d.mu.Lock()
 	defer d.mu.Unlock()

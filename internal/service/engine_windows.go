@@ -34,8 +34,13 @@ type Settings struct {
 	SingBoxSHA256  string `json:"singBoxSHA256"`
 	SingBoxVersion string `json:"singBoxVersion"`
 }
+
+// Engine serializes network operations with mu. Fields read by Status (state,
+// lastError, client, tested) are additionally written under view so status polling
+// never waits behind a connection attempt or path test.
 type Engine struct {
 	mu               sync.Mutex
+	view             sync.Mutex
 	cancelMu         sync.Mutex
 	intent           atomic.Uint64
 	ctx              context.Context
@@ -53,9 +58,14 @@ func NewEngine(ctx context.Context, s Settings, dir string) *Engine {
 	return &Engine{ctx: ctx, settings: s, tx: platform.Transaction{Path: filepath.Join(dir, "state.json"), Runner: platform.WindowsRunner{}}, state: "disconnected", tested: map[string]bool{}}
 }
 func (e *Engine) Recover() error { e.mu.Lock(); defer e.mu.Unlock(); return e.tx.Recover() }
+func (e *Engine) setState(state, lastError string) {
+	e.view.Lock()
+	e.state, e.lastError = state, lastError
+	e.view.Unlock()
+}
 func (e *Engine) Status() control.Status {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.view.Lock()
+	defer e.view.Unlock()
 	s := control.Status{State: e.state, Paths: []control.PathStatus{}, Mode: "bond", MTU: protocol.DefaultMTU, LastError: e.lastError, ServiceVersion: version.String(), ProtocolVersion: "1"}
 	for id, ok := range e.tested {
 		if ok {
@@ -66,7 +76,10 @@ func (e *Engine) Status() control.Status {
 		return s
 	}
 	v := e.client.Snapshot()
-	s.State = strings.ToLower(v.State)
+	// Until routes are applied the tunnel carries no traffic; report the engine state.
+	if e.state == "connected" {
+		s.State = strings.ToLower(v.State)
+	}
 	s.MTU = v.MTU
 	s.TxBytes = v.BytesSent
 	s.RxBytes = v.BytesReceived
@@ -97,7 +110,11 @@ func (e *Engine) Disconnect() error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.stop()
+	if err := e.stop(); err != nil {
+		return err
+	}
+	e.setState("disconnected", "")
+	return nil
 }
 func (e *Engine) stop() error {
 	err := e.tx.Recover()
@@ -110,16 +127,20 @@ func (e *Engine) stop() error {
 	}
 	if e.client != nil {
 		err = errors.Join(err, e.client.Close())
+		e.view.Lock()
 		e.client = nil
+		e.view.Unlock()
 	}
 	if e.proxyDone != nil {
 		<-e.proxyDone
 		e.proxyDone = nil
 	}
-	e.state = "disconnected"
 	if err != nil {
-		e.state = "error"
-		e.lastError = "network recovery incomplete; use Recover before reconnecting"
+		e.setState("error", "network recovery incomplete; use Recover before reconnecting")
+	} else {
+		e.view.Lock()
+		e.state = "disconnected"
+		e.view.Unlock()
 	}
 	return err
 }
@@ -155,12 +176,10 @@ func (e *Engine) connect(ctx context.Context, p control.Profile, intent uint64) 
 	if err = e.tx.Recover(); err != nil {
 		return err
 	}
-	e.state = "connecting"
-	e.lastError = ""
+	e.setState("connecting", "")
 	defer func() {
-		if err != nil {
-			_ = e.stop()
-			e.lastError = "connection failed; traffic is not tunneled"
+		if err != nil && e.stop() == nil {
+			e.setState("disconnected", "connection failed; traffic is not tunneled")
 		}
 	}()
 	var nonce [6]byte
@@ -190,13 +209,16 @@ func (e *Engine) connect(ctx context.Context, p control.Profile, intent uint64) 
 		return context.Canceled
 	}
 	e.proxyDone = done
-	e.client, err = client.New(cfg)
+	c, err := client.New(cfg)
 	if err != nil {
 		return err
 	}
+	e.view.Lock()
+	e.client = c
+	e.view.Unlock()
 	owned = true
 	start := make(chan error, 1)
-	go func() { start <- e.client.Start(e.activeContext) }()
+	go func() { start <- c.Start(e.activeContext) }()
 	select {
 	case err = <-start:
 	case proxyErr := <-done:
@@ -218,7 +240,7 @@ func (e *Engine) connect(ctx context.Context, p control.Profile, intent uint64) 
 	if err != nil {
 		return err
 	}
-	steps, err := platform.PlanNetwork(platform.NetworkInput{Alias: alias, PhysicalIndex: index, Gateway: gateway, Address: e.client.Snapshot().AssignedIP, MTU: p.MTU, Endpoints: endpoints})
+	steps, err := platform.PlanNetwork(platform.NetworkInput{Alias: alias, PhysicalIndex: index, Gateway: gateway, Address: c.Snapshot().AssignedIP, MTU: p.MTU, Endpoints: endpoints})
 	if err != nil {
 		return err
 	}
@@ -228,10 +250,8 @@ func (e *Engine) connect(ctx context.Context, p control.Profile, intent uint64) 
 	if err = e.tx.Apply(steps); err != nil {
 		return err
 	}
-	e.state = "connected"
-	monitoredCtx := e.activeContext
-	current := e.client
-	go e.monitor(p, intent, monitoredCtx, current, done)
+	e.setState("connected", "")
+	go e.monitor(p, intent, e.activeContext, c, done)
 
 	return nil
 }
@@ -287,9 +307,15 @@ func (e *Engine) prepare(p control.Profile, only string, dev io.ReadWriteCloser)
 		endpoints = append(endpoints, ips...)
 		resolved[path.ID] = ips[0].String()
 		localPort := uint16(13001 + i)
-		proxyPaths = append(proxyPaths, proxy.Path{ID: path.ID, Port: localPort, Node: node})
+		// Fresh per-session credentials keep other local processes off the loopback proxy.
+		var secret [24]byte
+		if _, err = rand.Read(secret[:]); err != nil {
+			return fail(err)
+		}
+		user, pass := "conflux-"+path.ID, hex.EncodeToString(secret[:])
+		proxyPaths = append(proxyPaths, proxy.Path{ID: path.ID, Port: localPort, Node: node, Username: user, Password: pass})
 		local := net.JoinHostPort("127.0.0.1", strconv.Itoa(int(localPort)))
-		cfg.Paths = append(cfg.Paths, client.PathConfig{ID: path.ID, Address: address, Open: func(ctx context.Context) (net.PacketConn, error) { return socksudp.Dial(ctx, local) }})
+		cfg.Paths = append(cfg.Paths, client.PathConfig{ID: path.ID, Address: address, Open: func(ctx context.Context) (net.PacketConn, error) { return socksudp.DialAuth(ctx, local, user, pass) }})
 	}
 	if only != "" {
 		cfg.MinPaths = 1
@@ -377,7 +403,9 @@ func (e *Engine) Test(ctx context.Context, p control.Profile, id string) error {
 	select {
 	case err = <-result:
 		if err == nil {
+			e.view.Lock()
 			e.tested[id] = true
+			e.view.Unlock()
 		}
 		return err
 	case <-ctx.Done():
@@ -407,8 +435,7 @@ func (e *Engine) monitor(p control.Profile, intent uint64, life context.Context,
 	}
 	err := e.stop()
 	if err == nil {
-		e.state = "recovering"
-		e.lastError = "tunnel stopped; rebuilding the session after restoring owned network changes"
+		e.setState("recovering", "tunnel stopped; rebuilding the session after restoring owned network changes")
 	}
 	e.mu.Unlock()
 	if err != nil {
@@ -435,7 +462,6 @@ func (e *Engine) monitor(p control.Profile, intent uint64, life context.Context,
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.intent.Load() == intent {
-		e.state = "error"
-		e.lastError = "automatic session recovery exhausted; networking restored, reconnect manually after checking relay and paths"
+		e.setState("error", "automatic session recovery exhausted; networking restored, reconnect manually after checking relay and paths")
 	}
 }

@@ -1,6 +1,6 @@
 # Release acceptance matrix
 
-This matrix is deliberately conservative. **NOT RUN** means no target-environment evidence is recorded here. **REQUIRES REAL ENVIRONMENT** identifies an unavailable system or hardware prerequisite, not a pass. Package tests/build evidence, when run, is recorded in `docs/VERIFICATION.md`; it does not automatically satisfy a system-wide VPN requirement. The authoritative full checklist is master specification §51 and §60.
+This matrix is deliberately conservative. **NOT RUN** means no target-environment evidence is recorded here. **REQUIRES REAL ENVIRONMENT** identifies an unavailable system or hardware prerequisite, not a pass. Package tests/build evidence, when run, is recorded in `docs/VERIFICATION.md`; it does not automatically satisfy a system-wide VPN requirement.
 
 | Requirement | Implementation / verification | Status |
 |---|---|---|
@@ -29,4 +29,4 @@ This matrix is deliberately conservative. **NOT RUN** means no target-environmen
 | Core build / --version / GUI+installer packaging | build scripts, Linux→Windows Wails and NSIS3.11 | PASS cross-build and unsigned NSIS creation; native Windows runtime NOT RUN |
 | Signed production delivery | real publisher certificate and verified runtime provenance | NOT AVAILABLE; installer explicitly unsigned |
 
-The MVP is **not release-accepted** until every mandatory master-specification requirement has fresh evidence, including unavailable-platform checks. No benchmark numbers are asserted by this document.
+The MVP is **not release-accepted** until every requirement in this matrix has fresh evidence, including unavailable-platform checks. No benchmark numbers are asserted by this document.
