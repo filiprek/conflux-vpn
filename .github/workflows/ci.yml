@@ -21,7 +21,7 @@ jobs:
       - run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
       - run: make build
       - run: go test ./internal/protocol -run '^$' -fuzz FuzzFrame -fuzztime 10s
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: unsigned-core-binaries
           path: dist/
@@ -74,7 +74,7 @@ jobs:
           choco install nsis --version=3.11 -y --no-progress
           & 'C:\Program Files (x86)\NSIS\makensis.exe' -WX deploy/windows/conflux.nsi
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: unsigned-windows-installer
           path: dist/Conflux-unsigned-setup.exe
