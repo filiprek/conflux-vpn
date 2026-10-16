@@ -1,0 +1,99 @@
+name: Checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: true
+      - run: make check
+      - run: cd ui/desktop && go test ./... && go vet ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+      - run: make build
+      - run: go test ./internal/protocol -run '^$' -fuzz FuzzFrame -fuzztime 10s
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-core-binaries
+          path: dist/
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ui/desktop/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ui/desktop/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: go test ./...
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem scripts,deploy/windows -Filter '*.ps1' | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count) { $failed = $true; $parseErrors | ForEach-Object { Write-Error $_.Message -ErrorAction Continue } }
+          }
+          if ($failed) { exit 1 }
+      - shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - run: cd ui/desktop; go test ./...; if ($LASTEXITCODE) { exit $LASTEXITCODE }; go vet ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+      - shell: pwsh
+        run: |
+          choco install nsis --version=3.11 -y --no-progress
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' -WX deploy/windows/conflux.nsi
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-windows-installer
+          path: dist/Conflux-unsigned-setup.exe
+  security:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - run: govulncheck ./...
+      - if: always()
+        run: GOOS=windows govulncheck ./...
+      - if: always()
+        run: cd ui/desktop && GOOS=windows govulncheck -tags production ./...
+      - name: Secret scan
+        if: always()
+        run: |
+          python3 scripts/scan-secrets.py

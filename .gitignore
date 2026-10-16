@@ -31,3 +31,20 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build outputs and local protected state
+/dist/
+node_modules/
+ui/desktop/build/bin/
+ui/desktop/frontend/dist/
+ui/desktop/frontend/coverage/
+*.pem
+*.key
+secrets.dat
+state.json
+relay.json
+*.zip
+__pycache__/
+.tools/
+/conflux-acceptance-*/
+/conflux-soak-*/

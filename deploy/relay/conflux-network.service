@@ -1,0 +1,15 @@
+[Unit]
+Description=Conflux owned relay network state
+Wants=network-online.target
+After=network-online.target
+Before=conflux-relay.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/conflux/network.sh up
+ExecStop=/usr/local/libexec/conflux/network.sh down
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

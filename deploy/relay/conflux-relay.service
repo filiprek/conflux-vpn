@@ -1,0 +1,44 @@
+[Unit]
+Description=Conflux authenticated multipath IPv4 relay
+Requires=conflux-network.service
+Wants=network-online.target
+After=network-online.target conflux-network.service
+
+[Service]
+Type=simple
+User=conflux
+Group=conflux
+UMask=0077
+ExecStartPre=/usr/local/bin/conflux-relay --config /etc/conflux/relay.json --check
+ExecStart=/usr/local/bin/conflux-relay --config /etc/conflux/relay.json
+ExecStartPost=/usr/local/bin/conflux-relay --config /etc/conflux/relay.json --health
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+KillMode=control-group
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=false
+DevicePolicy=closed
+DeviceAllow=/dev/net/tun rw
+ReadWritePaths=/var/lib/conflux /run/conflux
+RuntimeDirectory=conflux
+StateDirectory=conflux
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=multi-user.target
