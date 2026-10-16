@@ -15,7 +15,15 @@ $null = ([Security.Principal.SecurityIdentifier]$OwnerSID).Translate([Security.P
 if (Get-Service Conflux -ErrorAction SilentlyContinue) { throw 'Service already exists; uninstall or follow the upgrade guide.' }
 $install = Join-Path $env:ProgramFiles 'Conflux'
 $data = Join-Path $env:ProgramData 'Conflux'
-if (Test-Path $data) { throw 'Existing data directory: preserve and recover it before reinstalling.' }
+# A data directory holding only installer output (from an interrupted install) is reused.
+# Profiles, credentials or a network journal mean a previous installation: keep them.
+if (Test-Path $data) {
+ $owner = Join-Path $data 'owner-sid.txt'
+ $previous = @(Get-ChildItem -LiteralPath $data -Force | Where-Object { $_.Name -notin 'config.json','owner-sid.txt' })
+ if ($previous.Count -or !(Test-Path $owner) -or (Get-Content -LiteralPath $owner -Raw).Trim() -ne $OwnerSID) {
+  throw 'Existing data directory: preserve and recover it before reinstalling.'
+ }
+}
 function Assert-Hash($Path, $Expected) {
  if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing runtime: $Path" }
  if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $Expected) { throw 'Runtime SHA-256 mismatch.' }
@@ -38,7 +46,8 @@ if ($LASTEXITCODE) { throw 'Data ACL failed.' }
 foreach ($file in 'conflux-service.exe','confluxctl.exe','Conflux.exe') { Copy-Item -LiteralPath (Join-Path $SourceDirectory $file) -Destination $install -Force }
 Copy-Item -LiteralPath (Join-Path $SourceDirectory 'LICENSE') -Destination $install -Force
 Copy-Item -LiteralPath (Join-Path $SourceDirectory 'THIRD_PARTY_NOTICES.md') -Destination $install -Force
-Copy-Item -LiteralPath (Join-Path $SourceDirectory 'licenses') -Destination (Join-Path $install 'licenses') -Recurse -Force
+New-Item -ItemType Directory -Force (Join-Path $install 'licenses') | Out-Null
+Copy-Item -Path (Join-Path $SourceDirectory 'licenses\*') -Destination (Join-Path $install 'licenses') -Recurse -Force
 Copy-Item -LiteralPath $SingBox -Destination (Join-Path $install 'sing-box.exe') -Force
 Copy-Item -LiteralPath $Wintun -Destination (Join-Path $install 'wintun.dll') -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'uninstall.ps1') -Destination $install -Force
@@ -48,8 +57,11 @@ $configPath = Join-Path $data 'config.json'
 [IO.File]::WriteAllText((Join-Path $data 'owner-sid.txt'), $OwnerSID)
 $pipe = "Conflux-$OwnerSID"
 $binaryPath = '"' + (Join-Path $install 'conflux-service.exe') + '" --config "' + $configPath + '" --owner-sid ' + $OwnerSID + ' --pipe ' + $pipe
-& sc.exe create Conflux binPath= $binaryPath start= auto obj= LocalSystem DisplayName= 'Conflux VPN Service' | Out-Null
-if ($LASTEXITCODE) { throw 'Service registration failed; protected files retained for inspection.' }
+# New-Service keeps the quoted binary path intact; Windows PowerShell 5.1 splits it when
+# passed to sc.exe as a native argument. The default account is LocalSystem.
+try {
+ New-Service -Name Conflux -BinaryPathName $binaryPath -DisplayName 'Conflux VPN Service' -StartupType Automatic | Out-Null
+} catch { throw "Service registration failed; protected files retained for inspection. $($_.Exception.Message)" }
 & sc.exe failure Conflux reset= 86400 actions= restart/5000/restart/15000 | Out-Null
 if ($LASTEXITCODE) { throw 'Service recovery configuration failed.' }
 Start-Service Conflux

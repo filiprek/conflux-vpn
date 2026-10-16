@@ -174,7 +174,6 @@ function Install-Service([string]$Sid) {
     [IO.File]::WriteAllText((Join-Path $data 'config.json'), ($config | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
     Start-Service Conflux
   } else {
-    if (Test-Path $data) { throw "$data exists from an earlier installation. Run '$install\uninstall.ps1 -PurgeData' or remove it after checking its contents, then rerun." }
     Write-Step 'Installing the Conflux service'
     & (Join-Path $Directory 'deploy\windows\install.ps1') -OwnerSID $Sid -SourceDirectory $dist `
       -SingBox $runtime.SingBox -SingBoxSHA256 $singHash -Wintun $runtime.Wintun -WintunSHA256 $wintunHash
